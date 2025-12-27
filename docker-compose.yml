@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # The Database (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    container_name: insight_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgre
+      POSTGRES_DB: insight_zero
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # The Queue (Redis) - We need this for the "Analyze" jobs later
+  redis:
+    image: redis:alpine
+    container_name: insight_queue
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
