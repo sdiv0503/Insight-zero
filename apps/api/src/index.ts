@@ -1,15 +1,20 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express, {
   Request,
   Response,
   NextFunction,
   RequestHandler,
-} from "express"; // Added types
+} from "express";
 import cors from "cors";
 import axios from "axios";
 import { ClerkExpressRequireAuth } from "@clerk/clerk-sdk-node";
-import dotenv from "dotenv";
+import multer from "multer";
+import { prisma } from "./db";
+// -----------------------------------
 
-dotenv.config();
+const upload = multer({ storage: multer.memoryStorage() }); // Store file in RAM temporarily
 
 const app = express();
 const PORT = 3001;
@@ -22,24 +27,35 @@ app.get("/", (req, res) => {
   res.json({ message: "Insight-Zero Orchestrator is Online 🟢" });
 });
 
-// 2. The Bridge (PROTECTED)
-// We add 'ClerkExpressRequireAuth()' as middleware.
-// If the user isn't logged in, this function blocks them here.
+// 2. The Bridge (PROTECTED) - Standard Analysis
 app.post(
   "/start-analysis",
   ClerkExpressRequireAuth() as unknown as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       console.log("Authenticated User Request Received");
+      const { data_source } = req.body;
 
       // Send a request to the Python Engine
       const response = await axios.post("http://127.0.0.1:8000/analyze", {
-        data_source: req.body.data_source,
+        data_source: data_source,
+      });
+      const insight = response.data;
+
+      // Save to DB
+      const savedReport = await prisma.analysisReport.create({
+        data: {
+          dataSource: data_source,
+          summary: insight.summary,
+          anomalyCount: insight.anomalies_found,
+          rawJson: insight,
+        },
       });
 
       res.json({
         message: "Analysis Complete",
-        insight: response.data,
+        reportId: savedReport.id,
+        insight: insight,
       });
     } catch (error) {
       console.error("Python Engine is down or busy");
@@ -48,12 +64,78 @@ app.post(
   }
 );
 
+// 3. File Upload Route (PROTECTED)
+app.post(
+  "/upload-analysis",
+  ClerkExpressRequireAuth() as unknown as RequestHandler,
+  upload.single("dataset"), // Expect a file field named "dataset"
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+      // 1. Convert Buffer to String
+      const csvContent = req.file.buffer.toString("utf-8");
+      const dataSourceName = req.file.originalname;
+
+      console.log(`[API] 📂 Received File: ${dataSourceName}`);
+
+      // 2. Send CSV Content to Python
+      const pythonRes = await axios.post("http://127.0.0.1:8000/analyze", {
+        data_source: dataSourceName,
+        csv_content: csvContent,
+      });
+      const insight = pythonRes.data;
+
+      // 3. Save to DB
+      const savedReport = await prisma.analysisReport.create({
+        data: {
+          dataSource: dataSourceName,
+          summary: insight.summary,
+          anomalyCount: insight.anomalies_found,
+          rawJson: insight,
+        },
+      });
+
+      res.json({
+        message: "File Analyzed",
+        reportId: savedReport.id,
+        insight: insight,
+      });
+    } catch (error: any) {
+      console.error("Upload Failed", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// 4. Fetch History Route (Optional but good to have)
+app.get(
+  "/reports",
+  ClerkExpressRequireAuth() as unknown as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const reports = await prisma.analysisReport.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      });
+      res.json(reports);
+    } catch (error: any) {
+      res
+        .status(500)
+        .json({ error: "Failed to fetch reports", details: error.message });
+    }
+  }
+);
+
 // Error handler for auth failures
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error("🔥 GLOBAL ERROR:", err.message);
   if (err.message === "Unauthenticated") {
     res.status(401).json({ error: "You must be logged in to do this." });
   } else {
-    next(err);
+    res
+      .status(500)
+      .json({ error: "Internal Server Error", details: err.message });
   }
 });
 

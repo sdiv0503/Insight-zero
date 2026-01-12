@@ -5,26 +5,15 @@ import { Button } from "@/components/ui/button";
 import InsightChart from "@/components/InsightChart";
 import MetricCard from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
-
-// Helper to transform Python data for Recharts
-const transformData = (rawJson: any) => {
-  // We need to merge the "details" (anomalies) back into the full timeline
-  // For this week, we will just simulate the full timeline based on the anomaly logic
-  // In Week 4, we will pass the FULL dataset. 
-  // For now, let's create a visualization of the data we have.
-  return rawJson.details.map((d: any) => ({
-      date: d.date,
-      revenue: d.actual_value,
-      isAnomaly: true
-  }));
-};
+import FileUpload from "@/components/FileUpload";
 
 export default function Dashboard() {
   const { getToken, isSignedIn } = useAuth();
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
 
-  const runAnalysis = async () => {
+  // This is the "Simulation Mode" logic (Week 3 logic)
+  const runSimulation = async () => {
     if (!isSignedIn) return;
     setLoading(true);
     
@@ -49,14 +38,29 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Data Steward Dashboard</h1>
           <p className="text-muted-foreground">Autonomous Anomaly Detection</p>
         </div>
-        <Button onClick={runAnalysis} disabled={loading} size="lg">
-          {loading ? "Agent Working..." : "Run New Analysis"}
-        </Button>
+      </div>
+
+      {/* Input Section: Upload OR Demo */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Option 1: File Upload (The Real Deal) */}
+        <FileUpload onAnalysisComplete={(data) => setReport(data)} />
+        
+        {/* Option 2: Demo Button (The Simulation) */}
+        <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-50 transition">
+             <div className="text-center space-y-3">
+                <p className="text-sm font-medium text-slate-700">Don't have a CSV?</p>
+                <Button onClick={runSimulation} disabled={loading} variant="outline" className="w-full">
+                    {loading ? "Agent Working..." : "Run Simulation Mode"}
+                </Button>
+                <p className="text-xs text-slate-400">Generates mock data with PII</p>
+             </div>
+        </div>
       </div>
 
       {report ? (
@@ -83,24 +87,27 @@ export default function Dashboard() {
             {/* Main Chart Area */}
             <div className="grid gap-4 md:grid-cols-7">
                 <div className="col-span-4">
-                    {/* We pass the 'details' array as data for now */}
-                    <InsightChart data={report.details} outliers={report.details} />
+                    {/* UPDATED: Pass 'fullTrend' if available, otherwise fallback to 'details' */}
+                    <InsightChart 
+                        fullTrend={report.full_trend || report.details} 
+                        outliers={report.details} 
+                    />
                 </div>
                 
                 {/* Insights Side Panel */}
                 <div className="col-span-3 space-y-4">
-                    <div className="border rounded-xl p-6 bg-slate-50">
+                    <div className="border rounded-xl p-6 bg-slate-50 h-full">
                         <h3 className="font-semibold mb-4">Agent Insights</h3>
-                        <div className="space-y-4">
+                        <div className="space-y-4 max-h-[300px] overflow-y-auto">
                             {report.details.map((item: any, i: number) => (
                                 <div key={i} className="flex gap-4 p-3 bg-white rounded border shadow-sm">
-                                    <div className="w-1 bg-red-500 rounded-full" />
+                                    <div className="w-1 bg-red-500 rounded-full shrink-0" />
                                     <div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
                                             <span className="font-mono text-xs text-slate-500">{item.date}</span>
-                                            <Badge variant="destructive">HIGH SEVERITY</Badge>
+                                            <Badge variant="destructive" className="text-[10px]">HIGH SEVERITY</Badge>
                                         </div>
-                                        <p className="text-sm mt-1">{item.description}</p>
+                                        <p className="text-sm mt-1 font-medium">{item.description}</p>
                                         <p className="text-xs text-slate-400 mt-2">
                                             Expected Range: {item.expected_range}
                                         </p>
@@ -114,12 +121,12 @@ export default function Dashboard() {
             
             {/* Privacy Log */}
             <div className="p-4 border border-green-200 bg-green-50 rounded text-xs font-mono text-green-800">
-                <strong>PRIVACY AUDIT:</strong> {report.privacy_audit}
+                <strong>PRIVACY AUDIT:</strong> {report.privacy_audit || "No PII detected in this dataset."}
             </div>
         </div>
       ) : (
-        <div className="h-96 border-2 border-dashed rounded-xl flex items-center justify-center text-muted-foreground">
-            No analysis loaded. Click "Run New Analysis" to start.
+        <div className="h-[200px] border-2 border-dashed rounded-xl flex items-center justify-center text-muted-foreground bg-slate-50/30">
+            Upload a file or run simulation to see results.
         </div>
       )}
     </div>

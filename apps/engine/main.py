@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Optional  # <--- THIS WAS MISSING
 from core.loader import DataLoader
 from core.privacy import DataGuard
 from core.analyzer import StatisticalAnalyst
@@ -8,6 +9,7 @@ app = FastAPI()
 
 class AnalysisRequest(BaseModel):
     data_source: str
+    csv_content: Optional[str] = None 
 
 @app.get("/")
 def home():
@@ -18,27 +20,25 @@ def analyze_data(request: AnalysisRequest):
     try:
         print(f"1. Loading Data for: {request.data_source}...")
         
-        # 1. Load Data
-        # If the user asks for 'Sales_DB', we force simulation for now
-        source = "simulate_financial_data" if "Sales" in request.data_source else request.data_source
-        df = DataLoader.get_data(source)
+        # Pass the CSV content to the loader
+        df = DataLoader.get_data(request.data_source, request.csv_content)
         
         print("2. Running Privacy Checks...")
-        # 2. Privacy Scan (Check the 'notes' column for PII)
-        # We apply the redactor to the 'notes' column
-        df['safe_notes'] = df['notes'].apply(DataGuard.scan_and_redact)
+        # Check if 'notes' exists before scrubbing
+        if 'notes' in df.columns:
+            df['safe_notes'] = df['notes'].apply(DataGuard.scan_and_redact)
         
         print("3. Running Statistical Analysis...")
-        # 3. Analyze
         report = StatisticalAnalyst.analyze_revenue(df)
         
-        # Add the sanitized sample data to the report so we can see the redaction working
-        # (We only send back the specific anomaly row's notes)
-        if len(report['details']) > 0:
-            anomaly_date = report['details'][0]['date']
-            # Find the note for that date
-            safe_note = df[df['date'] == anomaly_date]['safe_notes'].values[0]
-            report['privacy_audit'] = f"Sanitized Note: {safe_note}"
+        # Privacy Audit Trail
+        if 'safe_notes' in df.columns and len(report['details']) > 0:
+             anomaly_date = report['details'][0]['date']
+             # Simple lookup for the first anomaly
+             row = df[df['date'] == anomaly_date]
+             if not row.empty:
+                safe_note = row['safe_notes'].values[0]
+                report['privacy_audit'] = f"Sanitized Note: {safe_note}"
 
         return report
 

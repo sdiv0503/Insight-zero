@@ -9,30 +9,29 @@ class StatisticalAnalyst:
 
     @staticmethod
     def analyze_revenue(df: pd.DataFrame):
-        # --- METHOD 1: Z-SCORE (Standard Deviation) ---
+        # ... (Previous Z-Score & IQR logic remains the same) ...
         mean = df['revenue'].mean()
         std_dev = df['revenue'].std()
         df['z_score'] = (df['revenue'] - mean) / std_dev
         
-        # --- METHOD 2: IQR (Interquartile Range) ---
-        # Robust method for skewed data
         Q1 = df['revenue'].quantile(0.25)
         Q3 = df['revenue'].quantile(0.75)
         IQR = Q3 - Q1
-        
         lower_bound = Q1 - (1.5 * IQR)
         upper_bound = Q3 + (1.5 * IQR)
         
-        # Determine anomalies: simpler to flag if it fails BOTH checks or just one
-        # Here we flag if it fails EITHER (Conservative approach)
         anomalies = df[
             (df['revenue'] < lower_bound) | 
             (df['revenue'] > upper_bound) | 
             (abs(df['z_score']) > 2.5)
         ]
         
+        # --- NEW: Prepare the Full Trend for the Chart ---
+        # We convert the entire DataFrame to a list of dictionaries
+        full_trend = df[['date', 'revenue']].to_dict(orient='records')
+        
         insight_report = {
-            "summary": "Analysis Complete (Multi-Method)",
+            "summary": "Analysis Complete",
             "total_rows_analyzed": len(df),
             "anomalies_found": len(anomalies),
             "statistical_profile": {
@@ -40,18 +39,18 @@ class StatisticalAnalyst:
                 "std_dev": int(std_dev),
                 "iqr_range": f"{int(lower_bound)} - {int(upper_bound)}"
             },
+            # THIS IS THE NEW PART:
+            "full_trend": full_trend, 
             "details": []
         }
 
         for index, row in anomalies.iterrows():
-            # Determine severity
             severity = "HIGH"
             reason = []
-            
             if row['revenue'] < lower_bound or row['revenue'] > upper_bound:
-                reason.append("Outside IQR Range")
+                reason.append("Outside IQR")
             if abs(row['z_score']) > 3:
-                reason.append("3x Std Dev (Z-Score)")
+                reason.append("Z-Score Spike")
             
             insight_report["details"].append({
                 "date": row['date'],
