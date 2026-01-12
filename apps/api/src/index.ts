@@ -108,6 +108,49 @@ app.post(
   }
 );
 
+// 6. LIVE DB CONNECTION ROUTE
+app.post('/connect-db-analysis', 
+  ClerkExpressRequireAuth() as unknown as RequestHandler, 
+  async (req: Request, res: Response) => {
+    try {
+        const { connection_string, query } = req.body;
+        
+        if (!connection_string || !query) {
+            return res.status(400).json({ error: "Missing connection details" });
+        }
+
+        console.log(`[API] 🔗 Connecting to Remote DB...`);
+
+        // Forward credentials to Python (Python acts as the bridge)
+        const pythonRes = await axios.post('http://127.0.0.1:8000/analyze', {
+            data_source: "postgres_live",
+            db_connection_str: connection_string,
+            db_query: query
+        });
+        const insight = pythonRes.data;
+
+        // Save Record
+        const savedReport = await prisma.analysisReport.create({
+            data: {
+                dataSource: "Live Database Connection",
+                summary: insight.summary,
+                anomalyCount: insight.anomalies_found,
+                rawJson: insight
+            }
+        });
+
+        res.json({ 
+            message: "DB Analyzed", 
+            reportId: savedReport.id, 
+            insight: insight 
+        });
+
+    } catch (error: any) {
+        console.error("DB Connection Failed", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // 4. Fetch History Route (Optional but good to have)
 app.get(
   "/reports",

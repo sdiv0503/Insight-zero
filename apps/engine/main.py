@@ -9,7 +9,9 @@ app = FastAPI()
 
 class AnalysisRequest(BaseModel):
     data_source: str
-    csv_content: Optional[str] = None 
+    csv_content: Optional[str] = None
+    db_connection_str: Optional[str] = None # NEW
+    db_query: Optional[str] = None          # NEW
 
 @app.get("/")
 def home():
@@ -20,8 +22,13 @@ def analyze_data(request: AnalysisRequest):
     try:
         print(f"1. Loading Data for: {request.data_source}...")
         
-        # Pass the CSV content to the loader
-        df = DataLoader.get_data(request.data_source, request.csv_content)
+        # Pass ALL parameters to the loader
+        df = DataLoader.get_data(
+            source=request.data_source, 
+            csv_content=request.csv_content,
+            db_connection_str=request.db_connection_str,
+            db_query=request.db_query
+        )
         
         print("2. Running Privacy Checks...")
         # Check if 'notes' exists before scrubbing

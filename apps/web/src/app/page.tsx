@@ -6,17 +6,17 @@ import InsightChart from "@/components/InsightChart";
 import MetricCard from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
 import FileUpload from "@/components/FileUpload";
+import DashboardSkeleton from "@/components/DashboardSkeleton";
+import DbConnect from "@/components/DbConnect";
 
 export default function Dashboard() {
   const { getToken, isSignedIn } = useAuth();
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
 
-  // This is the "Simulation Mode" logic (Week 3 logic)
   const runSimulation = async () => {
     if (!isSignedIn) return;
     setLoading(true);
-    
     try {
       const token = await getToken();
       const res = await fetch("http://localhost:3001/start-analysis", {
@@ -36,6 +36,11 @@ export default function Dashboard() {
     }
   };
 
+  const handleAnalysisComplete = (data: any) => {
+      setReport(data);
+      setLoading(false);
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       {/* Header */}
@@ -46,26 +51,34 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Input Section: Upload OR Demo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Option 1: File Upload (The Real Deal) */}
-        <FileUpload onAnalysisComplete={(data) => setReport(data)} />
+      {/* Input Grid: Upload | DB Connect | Demo */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Option 2: Demo Button (The Simulation) */}
+        {/* 1. File Upload */}
+        <div onClick={() => setLoading(true)}> 
+             <FileUpload onAnalysisComplete={handleAnalysisComplete} />
+        </div>
+
+        {/* 2. Live Database Connector (NEW) */}
+        <DbConnect onAnalysisComplete={handleAnalysisComplete} />
+        
+        {/* 3. Demo Mode */}
         <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-50 transition">
              <div className="text-center space-y-3">
-                <p className="text-sm font-medium text-slate-700">Don't have a CSV?</p>
+                <p className="text-sm font-medium text-slate-700">Quick Demo</p>
                 <Button onClick={runSimulation} disabled={loading} variant="outline" className="w-full">
-                    {loading ? "Agent Working..." : "Run Simulation Mode"}
+                    {loading ? "Agent Working..." : "Run Simulation"}
                 </Button>
-                <p className="text-xs text-slate-400">Generates mock data with PII</p>
+                <p className="text-xs text-slate-400">Mock Data Mode</p>
              </div>
         </div>
       </div>
 
-      {report ? (
+      {/* Loading & Results Area */}
+      {loading ? (
+        <DashboardSkeleton />
+      ) : report ? (
         <div className="space-y-6">
-            {/* Top Metrics Row */}
             <div className="grid gap-4 md:grid-cols-3">
                 <MetricCard 
                     title="Anomalies Found" 
@@ -84,17 +97,14 @@ export default function Dashboard() {
                 />
             </div>
 
-            {/* Main Chart Area */}
             <div className="grid gap-4 md:grid-cols-7">
                 <div className="col-span-4">
-                    {/* UPDATED: Pass 'fullTrend' if available, otherwise fallback to 'details' */}
                     <InsightChart 
                         fullTrend={report.full_trend || report.details} 
                         outliers={report.details} 
                     />
                 </div>
                 
-                {/* Insights Side Panel */}
                 <div className="col-span-3 space-y-4">
                     <div className="border rounded-xl p-6 bg-slate-50 h-full">
                         <h3 className="font-semibold mb-4">Agent Insights</h3>
@@ -106,6 +116,7 @@ export default function Dashboard() {
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className="font-mono text-xs text-slate-500">{item.date}</span>
                                             <Badge variant="destructive" className="text-[10px]">HIGH SEVERITY</Badge>
+                                            <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-200">{item.confidence || "N/A"}</Badge>
                                         </div>
                                         <p className="text-sm mt-1 font-medium">{item.description}</p>
                                         <p className="text-xs text-slate-400 mt-2">
@@ -119,14 +130,13 @@ export default function Dashboard() {
                 </div>
             </div>
             
-            {/* Privacy Log */}
             <div className="p-4 border border-green-200 bg-green-50 rounded text-xs font-mono text-green-800">
                 <strong>PRIVACY AUDIT:</strong> {report.privacy_audit || "No PII detected in this dataset."}
             </div>
         </div>
       ) : (
         <div className="h-[200px] border-2 border-dashed rounded-xl flex items-center justify-center text-muted-foreground bg-slate-50/30">
-            Upload a file or run simulation to see results.
+            Select a data source above to begin analysis.
         </div>
       )}
     </div>

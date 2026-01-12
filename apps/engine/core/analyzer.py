@@ -46,19 +46,34 @@ class StatisticalAnalyst:
 
         for index, row in anomalies.iterrows():
             severity = "HIGH"
-            reason = []
-            if row['revenue'] < lower_bound or row['revenue'] > upper_bound:
-                reason.append("Outside IQR")
-            if abs(row['z_score']) > 3:
-                reason.append("Z-Score Spike")
+            reasons = []
+            confidence_score = 0
             
+            # Check Detection Methods
+            is_iqr = row['revenue'] < lower_bound or row['revenue'] > upper_bound
+            is_zscore = abs(row['z_score']) > 2.5
+            
+            if is_iqr:
+                reasons.append("Outside IQR Range")
+            if is_zscore:
+                reasons.append("Z-Score Spike")
+            
+            # Weighted Confidence Logic
+            if is_iqr and is_zscore:
+                confidence_score = 95 # Verified by both algorithms
+            elif is_zscore:
+                confidence_score = 75 # Statistical outlier
+            elif is_iqr:
+                confidence_score = 65 # Distribution outlier
+                severity = "MEDIUM" # IQR alone is sometimes less severe
+
             insight_report["details"].append({
                 "date": row['date'],
                 "actual_value": int(row['revenue']),
                 "expected_range": f"IQR: {int(lower_bound)}-{int(upper_bound)}",
                 "severity": severity,
-                "detection_method": " + ".join(reason),
+                "confidence": f"{confidence_score}%", # <--- NEW FIELD
+                "detection_method": " + ".join(reasons),
                 "description": f"Revenue on {row['date']} was abnormal."
             })
-
         return insight_report
