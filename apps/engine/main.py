@@ -28,7 +28,7 @@ class AnalysisRequest(BaseModel):
 def home():
     return {"status": "Insight-Zero Enterprise Engine Ready 🛡️"}
 
-# --- NEW: PDF Upload Route ---
+# --- PDF Upload Route ---
 @app.post("/upload-context")
 async def upload_context(file: UploadFile = File(...)):
     try:
@@ -53,15 +53,20 @@ def analyze_data(request: AnalysisRequest):
         print("2. Running Privacy Checks...")
         if 'notes' in df.columns:
             df['safe_notes'] = df['notes'].apply(DataGuard.scan_and_redact)
+            # NEW: Count exactly how many rows had PII redacted
+            redacted_count = int((df['notes'] != df['safe_notes']).sum())
+            if redacted_count > 0:
+                report_privacy_msg = f"SHIELD ACTIVE: {redacted_count} instances of highly sensitive PII were autonomously redacted before AI analysis."
+            else:
+                report_privacy_msg = "SHIELD ACTIVE: No PII detected in this dataset."
+        else:
+            report_privacy_msg = "SHIELD INACTIVE: No text notes available to scan."
             
         print("3. Running Statistical Analysis...")
         report = StatisticalAnalyst.analyze_revenue(df)
         
-        if 'safe_notes' in df.columns and len(report['details']) > 0:
-             anomaly_date = report['details'][0]['date']
-             row = df[df['date'] == anomaly_date]
-             if not row.empty:
-                report['privacy_audit'] = f"Sanitized Note: {row['safe_notes'].values[0]}"
+        # Attach the new audit message to the report
+        report['privacy_audit'] = report_privacy_msg
 
         # Trigger RAG Brain
         tokens_used = 0
@@ -80,7 +85,7 @@ def analyze_data(request: AnalysisRequest):
             report['root_cause_analysis'] = rag_result['text']
             tokens_used = rag_result['tokens']
 
-        # NEW: TELEMETRY (FINOPS)
+        # TELEMETRY (FINOPS)
         process_time = round(time.time() - start_time, 2)
         # Assuming GPT-4 costs ~$0.01 per 1k tokens. We show how much money we SAVED by using Llama-3 locally.
         equivalent_cost = (tokens_used / 1000) * 0.01 
@@ -97,7 +102,6 @@ def analyze_data(request: AnalysisRequest):
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 class SlideRequest(BaseModel):
     anomaly_date: str

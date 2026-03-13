@@ -85,7 +85,7 @@ class RAGBrain:
             
             # 4. Ask Llama-3 via Groq
             prompt = f"""You are the Insight-Zero Autonomous Data Steward.
-            An anomaly was detected in the company's data:
+            An anomaly was detected in the company's financial data:
             Date: {anomaly_date}
             Issue: {anomaly_desc}
             
@@ -95,10 +95,10 @@ class RAGBrain:
             Analyze the context and explain the likely root cause of this anomaly. 
             
             CRITICAL INSTRUCTIONS:
-            1. Look at the date of the anomaly ({anomaly_date}) and compare it to the dates mentioned in the context.
-            2. If the context refers to events in a completely different month or is clearly unrelated to this specific date, DO NOT invent a connection.
-            3. If the context does not match, simply reply exactly with: "The internal knowledge base does not contain relevant documents for the anomaly on {anomaly_date}."
-            4. If the context DOES match, explain the root cause concisely in 2-3 sentences.
+            1. Temporal Matching: Corporate documents often use terms like "Q1", "First Quarter", or general months instead of exact daily dates. Consider the context a match if it aligns with {anomaly_date}.
+            2. Output Format: Use clean, professional Markdown bullet points to explain the root cause.
+            3. Tone: Be extremely concise and analytical. Do NOT repeat the same information twice.
+            4. If the context is completely unrelated, reply exactly with: "The internal knowledge base does not contain relevant documents for the anomaly on {anomaly_date}."
             """
             
             chat_completion = cls._groq_client.chat.completions.create(

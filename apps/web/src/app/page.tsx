@@ -12,6 +12,7 @@ import ExportControls from "@/components/ExportControls";
 import CostMonitor from "@/components/CostMonitor";
 import { Loader2 } from "lucide-react";
 import LandingPage from "@/components/LandingPage";
+import ReactMarkdown from "react-markdown"; // NEW: Markdown Renderer
 
 export default function Dashboard() {
   const { getToken } = useAuth();
@@ -75,7 +76,7 @@ export default function Dashboard() {
               </p>
             </div>
 
-            {/* ADDED: User Profile Button for logging out */}
+            {/* User Profile Button for logging out */}
             <UserButton afterSignOutUrl="/" />
           </div>
 
@@ -185,16 +186,37 @@ export default function Dashboard() {
                   </div>
                 </div>
 
+                {/* AI Root Cause Analysis Box */}
                 {report.root_cause_analysis && (
                   <div className="p-5 border border-indigo-200 bg-indigo-50 rounded-xl space-y-2">
                     <h4 className="text-sm font-bold text-indigo-900 flex items-center gap-2">
                       <span>🧠</span> AI Root Cause Analysis (Llama-3)
                     </h4>
-                    <p className="text-sm text-indigo-800 leading-relaxed">
-                      {report.root_cause_analysis}
-                    </p>
+                    
+                    {/* UPDATED: React Markdown Renderer mapping AI syntax to Tailwind CSS */}
+                    <div className="text-sm text-indigo-800 leading-relaxed">
+                      <ReactMarkdown
+                        components={{
+                          p: ({node, ...props}) => <p className="mb-2" {...props} />,
+                          ul: ({node, ...props}) => <ul className="list-disc pl-5 space-y-1 mb-2" {...props} />,
+                          strong: ({node, ...props}) => <strong className="font-bold text-indigo-950" {...props} />,
+                        }}
+                      >
+                        {report.root_cause_analysis}
+                      </ReactMarkdown>
+                    </div>
+
                   </div>
                 )}
+
+                {/* PRIVACY AUDIT BOX */}
+                {report.privacy_audit && (
+                  <div className="p-4 border border-emerald-200 bg-emerald-50 rounded text-xs font-mono text-emerald-800 flex items-center gap-2">
+                     <span className="text-lg">🛡️</span> 
+                     <span><strong>PRIVACY AUDIT:</strong> {report.privacy_audit}</span>
+                  </div>
+                )}
+                
               </div>
             </div>
           ) : (
