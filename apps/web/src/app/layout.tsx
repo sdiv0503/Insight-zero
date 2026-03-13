@@ -19,20 +19,8 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en">
         <body className={inter.className}>
-          <header className="p-4 border-b flex justify-between items-center">
-            <h1 className="font-bold text-xl">Insight-Zero</h1>
-            <div>
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <button className="bg-black text-white px-4 py-2 rounded">Sign In</button>
-                </SignInButton>
-              </SignedOut>
-              <SignedIn>
-                <UserButton />
-              </SignedIn>
-            </div>
-          </header>
-          <main className="min-h-screen p-8">
+          
+          <main>
             {children}
           </main>
         </body>

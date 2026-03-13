@@ -1,6 +1,9 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import { analysisQueue } from "./queue";
+import swaggerUi from 'swagger-ui-express';
+
 import express, {
   Request,
   Response,
@@ -21,6 +24,32 @@ const PORT = 3001;
 
 app.use(cors());
 app.use(express.json());
+
+const swaggerDocument = {
+  openapi: "3.0.0",
+  info: {
+    title: "Insight-Zero Orchestration Gateway",
+    version: "1.0.0",
+    description: "The secure Node.js Gateway API handling Auth, Redis Queues, and Python forwarding."
+  },
+  paths: {
+    "/upload-analysis": {
+      post: {
+        summary: "Upload a CSV dataset for analysis",
+        description: "Adds the dataset to the BullMQ Redis queue.",
+        responses: { "200": { description: "Job Queued successfully" } }
+      }
+    },
+    "/job-status/{id}": {
+      get: {
+        summary: "Poll Analysis Status",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Returns 'waiting', 'active', or 'completed' with results" } }
+      }
+    }
+  }
+};
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // 1. Health Check (Public)
 app.get("/", (req, res) => {
@@ -61,35 +90,80 @@ app.post(
       console.error("Python Engine is down or busy");
       res.status(500).json({ error: "Failed to contact Analyst Engine" });
     }
-  }
+  },
 );
 
-// 3. File Upload Route (PROTECTED)
 app.post(
   "/upload-analysis",
   ClerkExpressRequireAuth() as unknown as RequestHandler,
-  upload.single("dataset"), // Expect a file field named "dataset"
+  upload.single("file"),
   async (req: Request, res: Response) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-      // 1. Convert Buffer to String
       const csvContent = req.file.buffer.toString("utf-8");
-      const dataSourceName = req.file.originalname;
 
-      console.log(`[API] 📂 Received File: ${dataSourceName}`);
-
-      // 2. Send CSV Content to Python
-      const pythonRes = await axios.post("http://127.0.0.1:8000/analyze", {
-        data_source: dataSourceName,
+      // Add to Redis Queue instead of waiting
+      const job = await analysisQueue.add("analyze-csv", {
+        data_source: req.file.originalname,
         csv_content: csvContent,
+      });
+
+      res.json({ jobId: job.id, message: "Analysis Queued" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+// --- NEW: JOB STATUS POLLING ROUTE ---
+app.get(
+  "/job-status/:id",
+  ClerkExpressRequireAuth() as unknown as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const job = await analysisQueue.getJob(req.params.id as string);
+      if (!job) return res.status(404).json({ error: "Job not found" });
+
+      const state = await job.getState(); // 'waiting', 'active', 'completed', 'failed'
+      res.json({
+        id: job.id,
+        state: state,
+        result: job.returnvalue, // This holds the python JSON when completed
+        error: job.failedReason,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+// 6. LIVE DB CONNECTION ROUTE
+app.post(
+  "/connect-db-analysis",
+  ClerkExpressRequireAuth() as unknown as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const { connection_string, query } = req.body;
+
+      if (!connection_string || !query) {
+        return res.status(400).json({ error: "Missing connection details" });
+      }
+
+      console.log(`[API] 🔗 Connecting to Remote DB...`);
+
+      // Forward credentials to Python (Python acts as the bridge)
+      const pythonRes = await axios.post("http://127.0.0.1:8000/analyze", {
+        data_source: "postgres_live",
+        db_connection_str: connection_string,
+        db_query: query,
       });
       const insight = pythonRes.data;
 
-      // 3. Save to DB
+      // Save Record
       const savedReport = await prisma.analysisReport.create({
         data: {
-          dataSource: dataSourceName,
+          dataSource: "Live Database Connection",
           summary: insight.summary,
           anomalyCount: insight.anomalies_found,
           rawJson: insight,
@@ -97,59 +171,82 @@ app.post(
       });
 
       res.json({
-        message: "File Analyzed",
+        message: "DB Analyzed",
         reportId: savedReport.id,
         insight: insight,
       });
     } catch (error: any) {
-      console.error("Upload Failed", error.message);
+      console.error("DB Connection Failed", error.message);
       res.status(500).json({ error: error.message });
     }
-  }
+  },
 );
 
-// 6. LIVE DB CONNECTION ROUTE
-app.post('/connect-db-analysis', 
-  ClerkExpressRequireAuth() as unknown as RequestHandler, 
+// 7. NEW: KNOWLEDGE BASE UPLOAD ROUTE
+app.post(
+  "/upload-context",
+  ClerkExpressRequireAuth() as unknown as RequestHandler,
+  upload.single("document"),
   async (req: Request, res: Response) => {
     try {
-        const { connection_string, query } = req.body;
-        
-        if (!connection_string || !query) {
-            return res.status(400).json({ error: "Missing connection details" });
-        }
+      if (!req.file)
+        return res.status(400).json({ error: "No document uploaded" });
 
-        console.log(`[API] 🔗 Connecting to Remote DB...`);
+      console.log(
+        `[API] 📚 Sending PDF to Vector DB: ${req.file.originalname}`,
+      );
 
-        // Forward credentials to Python (Python acts as the bridge)
-        const pythonRes = await axios.post('http://127.0.0.1:8000/analyze', {
-            data_source: "postgres_live",
-            db_connection_str: connection_string,
-            db_query: query
-        });
-        const insight = pythonRes.data;
+      // We must send the file buffer to Python as form-data
+      const formData = new FormData();
+      const blob = new Blob([new Uint8Array(req.file.buffer)], {
+        type: "application/pdf",
+      });
+      formData.append("file", blob, req.file.originalname);
 
-        // Save Record
-        const savedReport = await prisma.analysisReport.create({
-            data: {
-                dataSource: "Live Database Connection",
-                summary: insight.summary,
-                anomalyCount: insight.anomalies_found,
-                rawJson: insight
-            }
-        });
+      const pythonRes = await fetch("http://127.0.0.1:8000/upload-context", {
+        method: "POST",
+        body: formData,
+      });
 
-        res.json({ 
-            message: "DB Analyzed", 
-            reportId: savedReport.id, 
-            insight: insight 
-        });
+      if (!pythonRes.ok) throw new Error("Python RAG ingestion failed");
 
+      const result = await pythonRes.json();
+      res.json({ message: "Knowledge Base Updated", details: result });
     } catch (error: any) {
-        console.error("DB Connection Failed", error.message);
-        res.status(500).json({ error: error.message });
+      console.error("Context Upload Failed", error.message);
+      res.status(500).json({ error: error.message });
     }
-});
+  },
+);
+
+// 8. NEW: GENERATE PPTX SLIDE ROUTE
+app.post(
+  "/export-slide",
+  ClerkExpressRequireAuth() as unknown as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const { anomaly_date, revenue, confidence, root_cause } = req.body;
+
+      console.log(`[API] 📊 Generating Executive Slide for ${anomaly_date}`);
+
+      const pythonRes = await fetch("http://127.0.0.1:8000/export-slide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anomaly_date, revenue, confidence, root_cause }),
+      });
+
+      if (!pythonRes.ok)
+        throw new Error("Failed to generate slide in Python Engine");
+
+      const result = await pythonRes.json();
+      // Result contains { filename, data: base64_string }
+      res.json(result);
+    } catch (error: any) {
+      console.error("Slide Generation Failed", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
 
 // 4. Fetch History Route (Optional but good to have)
 app.get(
@@ -167,7 +264,7 @@ app.get(
         .status(500)
         .json({ error: "Failed to fetch reports", details: error.message });
     }
-  }
+  },
 );
 
 // Error handler for auth failures
