@@ -1,29 +1,49 @@
-# Dependencies
-node_modules/
-venv/
-__pycache__/
-.pnpm-store
-
-# Next.js build
-.next/
-dist/
-build/
-
-# Environment Variables (NEVER UPLOAD THESE)
+# =========================
+# 1. ENVIRONMENT VARIABLES
+# =========================
 .env
 .env.local
-.env.production
-.env.development
-*.env
+.env.development.local
+.env.test.local
+.env.production.local
 
-# System Files
-.DS_Store
-Thumbs.db
+# =========================
+# 2. PYTHON / PYSPARK (Engine)
+# =========================
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+temp_ingestion_cache.csv
 
-# Logs
+# Spark specific
+spark-warehouse/
+metastore_db/
+derby.log
+
+# =========================
+# 3. NODE.JS / NEXT.JS (Web & Gateway)
+# =========================
+node_modules/
+.next/
+out/
+build/
+dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnp.*
 
+# =========================
+# 4. OS / SYSTEM FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# 5. TEST DATA
+# =========================
+*.csv
 *.pdf
-*.pptx

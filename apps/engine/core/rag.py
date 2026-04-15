@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Global initialization at startup
+print("Loading Embedding Engine into RAM...")
+_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
 class RAGBrain:
     _pinecone_index = None
     _embedder = None
@@ -17,9 +21,10 @@ class RAGBrain:
     @classmethod
     def initialize(cls):
         """Lazy initialization of heavy ML models and connections"""
+        # Point the class attribute to the loaded global model
         if cls._embedder is None:
-            print("🧠 Loading Local Embedding Model (all-MiniLM-L6-v2)...")
-            cls._embedder = SentenceTransformer('all-MiniLM-L6-v2')
+            print("🧠 Linking Local Embedding Model (all-MiniLM-L6-v2)...")
+            cls._embedder = _embedding_model
         
         if cls._pinecone_index is None:
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -31,79 +36,99 @@ class RAGBrain:
     @classmethod
     def ingest_pdf(cls, pdf_bytes: bytes, filename: str):
         """Reads a PDF, chunks it, embeds it, and saves to Pinecone"""
-        cls.initialize()
-        print(f"📄 Processing Document: {filename}")
-        
-        # 1. Extract Text
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text() + "\n"
+        try:
+            cls.initialize()
+            print(f"📄 Processing Document: {filename}")
             
-        # 2. Chunk Text (So we don't overwhelm the LLM)
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-        chunks = text_splitter.split_text(text)
-        
-        # 3. Embed and Upsert
-        vectors = []
-        for i, chunk in enumerate(chunks):
-            embedding = cls._embedder.encode(chunk).tolist()
-            vectors.append({
-                "id": f"{filename}-chunk-{i}",
-                "values": embedding,
-                "metadata": {"text": chunk, "source": filename}
-            })
+            # 1. Extract Text
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            text = ""
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:  # Ensure extracted text isn't None
+                    text += extracted + "\n"
+                
+            if not text.strip():
+                raise ValueError("No extractable text found in this PDF.")
+                
+            # 2. Chunk Text
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+            chunks = text_splitter.split_text(text)
             
-        # Upsert in batches of 100
-        for i in range(0, len(vectors), 100):
-            cls._pinecone_index.upsert(vectors=vectors[i:i+100])
+            # 3. Embed and Upsert
+            vectors = []
+            # Use cls._embedder (the model) to encode chunks
+            embeddings = cls._embedder.encode(chunks)
             
-        return {"status": "success", "chunks_embedded": len(chunks)}
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                # Added replace() to sanitize filenames with spaces (Pinecone requirement)
+                safe_id = f"{filename}-chunk-{i}".replace(" ", "_")
+                
+                vectors.append({
+                    "id": safe_id,
+                    "values": embedding.tolist(),
+                    "metadata": {"text": chunk, "source": filename}
+                })
+                
+            # Upsert in batches of 100
+            for i in range(0, len(vectors), 100):
+                cls._pinecone_index.upsert(vectors=vectors[i:i+100])
+                
+            print(f"✅ Embedded {len(chunks)} chunks into Pinecone Database.")
+            return {"status": "success", "chunks_embedded": len(chunks)}
+            
+        except Exception as e:
+            print(f"❌ PDF Ingestion Failed: {str(e)}")
+            raise e
 
     @classmethod
-    def get_root_cause(cls, anomaly_date: str, anomaly_desc: str) -> str:
+    def get_root_cause(cls, anomaly_date: str, anomaly_desc: str) -> dict:
         """Queries Pinecone for context and asks Llama-3 (Groq) for an explanation"""
         try:
             cls.initialize()
             
             # 1. Embed the search query
             query_text = f"What happened around {anomaly_date}? {anomaly_desc}"
+            # Encode query using the model instance
             query_vector = cls._embedder.encode(query_text).tolist()
             
-            # 2. Search Pinecone for top 3 most relevant PDF chunks
+            # 2. Search Pinecone
             results = cls._pinecone_index.query(
                 vector=query_vector,
                 top_k=3,
                 include_metadata=True
             )
             
-            if not results['matches']:
-                return "No internal context found in uploaded documents."
+            if not results.get('matches'):
+                return {"text": f"No internal context found in uploaded documents for {anomaly_date}.", "tokens": 0}
                 
             # 3. Combine retrieved context
             context = "\n---\n".join([match['metadata']['text'] for match in results['matches']])
             
-            # 4. Ask Llama-3 via Groq
-            prompt = f"""You are the Insight-Zero Autonomous Data Steward.
-            An anomaly was detected in the company's financial data:
-            Date: {anomaly_date}
-            Issue: {anomaly_desc}
+            # 4. Ask Llama-3 via Groq (Prompt remains exactly as requested)
+            prompt =f"""You are the Insight-Zero Autonomous Data Steward.
+            A high-severity anomaly was detected in the company's financial data.
             
-            Here is the internal documentation retrieved from the company knowledge base:
+            [INCIDENT DETAILS]
+            Date of Anomaly: {anomaly_date}
+            Description: {anomaly_desc}
+            
+            [RETRIEVED KNOWLEDGE BASE CONTEXT]
             {context}
             
-            Analyze the context and explain the likely root cause of this anomaly. 
+            [STRICT OPERATING PROTOCOL]
+            Perform a Root Cause Analysis by following these steps exactly:
+            1. TEMPORAL ISOLATION: Look at the year of the anomaly ({anomaly_date}). Scan the context for matching timeframes (e.g., "Q1 2022", "May 2022", "Three Months Ended April 30"). 
+            2. DISCARD CONFLICTS: If the context discusses events from a completely different year (e.g., a server outage in 2024), you MUST completely ignore that part of the context. Do not attempt to link them.
+            3. ROOT CAUSE: Using ONLY the temporally matching context, explain the business reason for the financial anomaly. Focus on business metrics (margins, inventory, freight costs).
             
-            CRITICAL INSTRUCTIONS:
-            1. Temporal Matching: Corporate documents often use terms like "Q1", "First Quarter", or general months instead of exact daily dates. Consider the context a match if it aligns with {anomaly_date}.
-            2. Output Format: Use clean, professional Markdown bullet points to explain the root cause.
-            3. Tone: Be extremely concise and analytical. Do NOT repeat the same information twice.
-            4. If the context is completely unrelated, reply exactly with: "The internal knowledge base does not contain relevant documents for the anomaly on {anomaly_date}."
+            [OUTPUT FORMAT]
+            Provide a clean, professional summary using Markdown bullet points. Do not mention your internal thought process. Be highly concise.
             """
             
             chat_completion = cls._groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="llama-3.1-8b-instant", # <--- NEW ACTIVE MODEL
+                model="llama-3.1-8b-instant",
                 temperature=0.2,
             )
             

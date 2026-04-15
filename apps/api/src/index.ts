@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { analysisQueue } from "./queue";
-import swaggerUi from 'swagger-ui-express';
+import swaggerUi from "swagger-ui-express";
 
 import express, {
   Request,
@@ -23,33 +23,47 @@ const app = express();
 const PORT = 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const swaggerDocument = {
   openapi: "3.0.0",
   info: {
     title: "Insight-Zero Orchestration Gateway",
     version: "1.0.0",
-    description: "The secure Node.js Gateway API handling Auth, Redis Queues, and Python forwarding."
+    description:
+      "The secure Node.js Gateway API handling Auth, Redis Queues, and Python forwarding.",
   },
   paths: {
     "/upload-analysis": {
       post: {
         summary: "Upload a CSV dataset for analysis",
         description: "Adds the dataset to the BullMQ Redis queue.",
-        responses: { "200": { description: "Job Queued successfully" } }
-      }
+        responses: { "200": { description: "Job Queued successfully" } },
+      },
     },
     "/job-status/{id}": {
       get: {
         summary: "Poll Analysis Status",
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        responses: { "200": { description: "Returns 'waiting', 'active', or 'completed' with results" } }
-      }
-    }
-  }
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            description:
+              "Returns 'waiting', 'active', or 'completed' with results",
+          },
+        },
+      },
+    },
+  },
 };
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // 1. Health Check (Public)
 app.get("/", (req, res) => {
@@ -117,26 +131,22 @@ app.post(
 );
 
 // --- NEW: JOB STATUS POLLING ROUTE ---
-app.get(
-  "/job-status/:id",
-  ClerkExpressRequireAuth() as unknown as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const job = await analysisQueue.getJob(req.params.id as string);
-      if (!job) return res.status(404).json({ error: "Job not found" });
+app.get("/job-status/:id", async (req: Request, res: Response) => {
+  try {
+    const job = await analysisQueue.getJob(req.params.id as string);
+    if (!job) return res.status(404).json({ error: "Job not found" });
 
-      const state = await job.getState(); // 'waiting', 'active', 'completed', 'failed'
-      res.json({
-        id: job.id,
-        state: state,
-        result: job.returnvalue, // This holds the python JSON when completed
-        error: job.failedReason,
-      });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  },
-);
+    const state = await job.getState(); // 'waiting', 'active', 'completed', 'failed'
+    res.json({
+      id: job.id,
+      state: state,
+      result: job.returnvalue, // This holds the python JSON when completed
+      error: job.failedReason,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // 6. LIVE DB CONNECTION ROUTE
 app.post(

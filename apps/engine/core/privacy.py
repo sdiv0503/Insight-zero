@@ -1,30 +1,35 @@
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
+from pyspark.sql.functions import udf
+from pyspark.sql.types import StringType
+from pyspark.sql.functions import pandas_udf
+import pandas as pd
 
-# Initialize engines only once (Heavy operation)
-analyzer = AnalyzerEngine()
-anonymizer = AnonymizerEngine()
+# Global variables to cache the models on the worker nodes
+_analyzer = None
+_anonymizer = None
 
 class DataGuard:
-    """
-    The Security Guard. 
-    Responsibility: Check data for PII (Personally Identifiable Information) 
-    and redact it before the Analyst sees it.
-    """
-    
     @staticmethod
-    def scan_and_redact(text_data: str):
-        try:
-            # 1. Analyze: Find the sensitive info
-            results = analyzer.analyze(text=text_data, entities=["PHONE_NUMBER", "EMAIL_ADDRESS", "PERSON"], language='en')
+    def scan_and_redact(text: str) -> str:
+        if not text:
+            return text
             
-            # 2. Anonymize: Replace it with <REDACTED>
-            anonymized_result = anonymizer.anonymize(
-                text=text_data,
-                analyzer_results=results
-            )
-            
-            return anonymized_result.text
-        except Exception as e:
-            print(f"Privacy Error: {e}")
-            return text_data # Fail safe: return original if scrubber fails
+        # LAZY INITIALIZATION: Only load the heavy NLP models if they haven't been loaded yet.
+        # This prevents the massive OOM spike when Spark starts up.
+        global _analyzer, _anonymizer
+        if _analyzer is None:
+            _analyzer = AnalyzerEngine()
+            _anonymizer = AnonymizerEngine()
+
+        # Define the entities we want to redact
+        entities_to_redact = ["EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD", "US_SSN", "PERSON"]
+        
+        # Scan and Anonymize
+        results = _analyzer.analyze(text=text, entities=entities_to_redact, language='en')
+        anonymized_text = _anonymizer.anonymize(text=text, analyzer_results=results)
+        
+        return anonymized_text.text
+
+def batch_redact(s: pd.Series) -> pd.Series:
+    return s.apply(DataGuard.scan_and_redact)

@@ -20,32 +20,72 @@ export default function Dashboard() {
   const [jobState, setJobState] = useState<string | null>(null);
   const [report, setReport] = useState<any>(null);
 
-  // THE POLLING ENGINE
+  // THE DIAGNOSTIC POLLING ENGINE
   const pollJobStatus = async (jobId: string) => {
     setLoading(true);
     setJobState("waiting");
-    const token = await getToken();
 
     const interval = setInterval(async () => {
-      const res = await fetch(`http://localhost:3001/job-status/${jobId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
+      try {
+        // FIX: Moved INSIDE the interval. Always grab a fresh token right before fetching.
+        const token = await getToken();
 
-      setJobState(data.state); // 'waiting' -> 'active' -> 'completed'
+        if (!token) {
+          console.warn("Clerk token is null, waiting for session to load...");
+          return; // Skip this tick and try again in 2 seconds
+        }
 
-      if (data.state === "completed") {
-        clearInterval(interval);
-        setReport(data.result);
-        setLoading(false);
-        setJobState(null);
-      } else if (data.state === "failed") {
-        clearInterval(interval);
-        alert("Analysis Job Failed.");
-        setLoading(false);
-        setJobState(null);
+        const res = await fetch(`http://localhost:3001/job-status/${jobId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        // Catch the 401 gracefully
+        if (res.status === 401) {
+          console.error(
+            "❌ 401 Unauthorized: Node server rejected the Clerk token.",
+          );
+          return;
+        }
+
+        const text = await res.text();
+        if (!text) return;
+
+        const data = JSON.parse(text);
+        console.log("🔍 BullMQ Job State:", data.state);
+        setJobState(data.state);
+
+        if (data.state === "completed") {
+          clearInterval(interval);
+
+          if (!data.result) {
+            console.error(
+              "❌ CRITICAL ERROR: Job completed but Node returned no data.",
+            );
+            alert(
+              "Error: The Node.js worker finished, but failed to return the data.",
+            );
+            setLoading(false);
+            setJobState(null);
+            return;
+          }
+
+          console.log("✅ Analysis Received!", data.result);
+          setReport(data.result);
+          setLoading(false);
+          setJobState(null);
+        } else if (data.state === "failed") {
+          clearInterval(interval);
+          console.error("❌ BACKGROUND JOB FAILED:", data);
+          alert(
+            "Analysis Job Failed in Node Worker. Check your Node.js Gateway terminal.",
+          );
+          setLoading(false);
+          setJobState(null);
+        }
+      } catch (error) {
+        console.warn("Polling blip detected...", error);
       }
-    }, 2000); // Poll every 2 seconds
+    }, 2000);
   };
 
   const handleJobQueued = (jobIdOrData: any) => {
@@ -145,7 +185,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Main Chart and Side Panel */}
-                <div className="grid gap-4 md:grid-cols-7">
+                <div className="grid gap-4 md:grid-cols-1">
                   <div className="col-span-4">
                     <InsightChart
                       fullTrend={report.full_trend || report.details}
@@ -192,31 +232,43 @@ export default function Dashboard() {
                     <h4 className="text-sm font-bold text-indigo-900 flex items-center gap-2">
                       <span>🧠</span> AI Root Cause Analysis (Llama-3)
                     </h4>
-                    
+
                     {/* UPDATED: React Markdown Renderer mapping AI syntax to Tailwind CSS */}
                     <div className="text-sm text-indigo-800 leading-relaxed">
                       <ReactMarkdown
                         components={{
-                          p: ({node, ...props}) => <p className="mb-2" {...props} />,
-                          ul: ({node, ...props}) => <ul className="list-disc pl-5 space-y-1 mb-2" {...props} />,
-                          strong: ({node, ...props}) => <strong className="font-bold text-indigo-950" {...props} />,
+                          p: ({ node, ...props }) => (
+                            <p className="mb-2" {...props} />
+                          ),
+                          ul: ({ node, ...props }) => (
+                            <ul
+                              className="list-disc pl-5 space-y-1 mb-2"
+                              {...props}
+                            />
+                          ),
+                          strong: ({ node, ...props }) => (
+                            <strong
+                              className="font-bold text-indigo-950"
+                              {...props}
+                            />
+                          ),
                         }}
                       >
                         {report.root_cause_analysis}
                       </ReactMarkdown>
                     </div>
-
                   </div>
                 )}
 
                 {/* PRIVACY AUDIT BOX */}
                 {report.privacy_audit && (
                   <div className="p-4 border border-emerald-200 bg-emerald-50 rounded text-xs font-mono text-emerald-800 flex items-center gap-2">
-                     <span className="text-lg">🛡️</span> 
-                     <span><strong>PRIVACY AUDIT:</strong> {report.privacy_audit}</span>
+                    <span className="text-lg">🛡️</span>
+                    <span>
+                      <strong>PRIVACY AUDIT:</strong> {report.privacy_audit}
+                    </span>
                   </div>
                 )}
-                
               </div>
             </div>
           ) : (

@@ -7,6 +7,7 @@ from core.analyzer import StatisticalAnalyst
 from core.rag import RAGBrain
 from core.slide_generator import BoardroomSlide
 import time
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="Insight-Zero Intelligence Engine",
@@ -16,6 +17,16 @@ app = FastAPI(
         "name": "Integration Team",
         "email": "api@insight-zero.com",
     },
+)
+
+# 2. NEW CORS CONFIGURATION
+# This tells Python to accept requests directly from your Next.js frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001"], # Trust Next.js and Node Gateway
+    allow_credentials=True,
+    allow_methods=["*"], # Allow POST, GET, OPTIONS, etc.
+    allow_headers=["*"], # Allow all headers
 )
 
 class AnalysisRequest(BaseModel):
@@ -41,36 +52,40 @@ async def upload_context(file: UploadFile = File(...)):
 @app.post("/analyze")
 def analyze_data(request: AnalysisRequest):
     start_time = time.time() # START TIMER
-    try:
-        print(f"1. Loading Data for: {request.data_source}...")
-        df = DataLoader.get_data(
+    print("1. Loading Data for: {request.data_source}...")
+    df = DataLoader.get_data(
             source=request.data_source, 
-            csv_content=request.csv_content,
-            db_connection_str=request.db_connection_str,
-            db_query=request.db_query
+            csv_content=request.csv_content
         )
         
-        print("2. Running Privacy Checks...")
-        if 'notes' in df.columns:
-            df['safe_notes'] = df['notes'].apply(DataGuard.scan_and_redact)
-            # NEW: Count exactly how many rows had PII redacted
-            redacted_count = int((df['notes'] != df['safe_notes']).sum())
-            if redacted_count > 0:
-                report_privacy_msg = f"SHIELD ACTIVE: {redacted_count} instances of highly sensitive PII were autonomously redacted before AI analysis."
-            else:
-                report_privacy_msg = "SHIELD ACTIVE: No PII detected in this dataset."
-        else:
-            report_privacy_msg = "SHIELD INACTIVE: No text notes available to scan."
+    print("2. Running Privacy Checks (Distributed)...")
+    if 'notes' in df.columns:
+            from core.privacy import batch_redact
+            from pyspark.sql.functions import pandas_udf, col
             
-        print("3. Running Statistical Analysis...")
-        report = StatisticalAnalyst.analyze_revenue(df)
-        
-        # Attach the new audit message to the report
-        report['privacy_audit'] = report_privacy_msg
+            # FIX: Dynamically register the UDF here, guaranteeing Spark is ready
+            redact_udf = pandas_udf(batch_redact, returnType='string')
+            
+            # Apply the UDF across the Spark cluster
+            df = df.withColumn('safe_notes', redact_udf(col('notes')))
+            
+            # Count redactions in PySpark
+            redacted_count = df.filter(col('notes') != col('safe_notes')).count()
+            
+            if redacted_count > 0:
+                report_privacy_msg = f"SHIELD ACTIVE: {redacted_count} instances of sensitive PII redacted via PySpark Vectorized UDF."
+            else:
+                report_privacy_msg = "SHIELD ACTIVE: No PII detected."
+    else:
+            report_privacy_msg = "SHIELD INACTIVE: No text notes to scan."
+            
+    print("3. Running Statistical Analysis (PySpark Engine)...")
+    report = StatisticalAnalyst.analyze_revenue(df)
+    report['privacy_audit'] = report_privacy_msg
 
         # Trigger RAG Brain
-        tokens_used = 0
-        if len(report['details']) > 0:
+    tokens_used = 0
+    if len(report['details']) > 0:
             print("4. Querying RAG Brain for Root Cause...")
             sorted_anomalies = sorted(
                 report['details'], 
@@ -86,22 +101,19 @@ def analyze_data(request: AnalysisRequest):
             tokens_used = rag_result['tokens']
 
         # TELEMETRY (FINOPS)
-        process_time = round(time.time() - start_time, 2)
+    process_time = round(time.time() - start_time, 2)
         # Assuming GPT-4 costs ~$0.01 per 1k tokens. We show how much money we SAVED by using Llama-3 locally.
-        equivalent_cost = (tokens_used / 1000) * 0.01 
+    equivalent_cost = (tokens_used / 1000) * 0.01 
         
-        report['ops_metrics'] = {
+    report['ops_metrics'] = {
             "processing_time_sec": process_time,
             "llm_tokens_used": tokens_used,
             "equivalent_openai_cost": f"${equivalent_cost:.4f}",
             "actual_cost": "$0.0000"
         }
 
-        return report
+    return report
 
-    except Exception as e:
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 class SlideRequest(BaseModel):
     anomaly_date: str
