@@ -6,7 +6,8 @@ import { BookOpen, CheckCircle } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 
 export default function ContextUploader() {
-  const { getToken } = useAuth();
+  // NEW: Destructure userId from Clerk
+  const { getToken, userId } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -19,6 +20,8 @@ export default function ContextUploader() {
 
     // FIX: Changed "document" to "file" to match FastAPI's parameter name exactly
     formData.append("file", e.target.files[0]);
+    // NEW: Pass the Clerk userId as the tenant_id. Fallback to anonymous if no user.
+    formData.append("tenant_id", userId || "anonymous");
 
     try {
       const token = await getToken();

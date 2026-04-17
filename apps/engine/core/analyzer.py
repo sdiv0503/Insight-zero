@@ -53,10 +53,11 @@ class StatisticalAnalyst:
 
                 # Safer Struct-based UDF to prevent PyArrow multi-column serialization crashes
                 @pandas_udf('integer')
-                def predict_anomaly(features_series: pd.Series) -> pd.Series:
+                def predict_anomaly(*cols: pd.Series) -> pd.Series:
+                    # Correct way to combine PyArrow Series into a Pandas DataFrame
+                    pdf_chunk = pd.concat(cols, axis=1)
+                    pdf_chunk.columns = numeric_cols 
                     model = broadcast_model.value
-                    # Convert the PyArrow struct back into a safe Pandas DataFrame
-                    pdf_chunk = pd.DataFrame(features_series.tolist(), columns=numeric_cols)
                     predictions = model.predict(pdf_chunk)
                     return pd.Series(predictions)
 

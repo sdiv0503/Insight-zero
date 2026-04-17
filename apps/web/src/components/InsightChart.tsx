@@ -26,12 +26,12 @@ export default function InsightChart({ fullTrend, outliers }: { fullTrend: any[]
 
   return (
     <>
-      <Card className="w-full h-[400px]">
+      <Card className="w-full h-100">
         <CardHeader>
           <CardTitle>Revenue Trend (Click Blue Dots for Details)</CardTitle>
         </CardHeader>
-        <CardContent className="h-[320px]">
-          <ResponsiveContainer width="100%" height="100%">
+        <CardContent className="h-80">
+          <ResponsiveContainer width="100%" height={300}>
             <LineChart data={fullTrend}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" tick={{fontSize: 12}} />

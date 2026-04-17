@@ -1,13 +1,23 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+import logging
+import os
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional
 from core.loader import DataLoader
 from core.privacy import DataGuard
+from pyspark.sql import SparkSession
 from core.analyzer import StatisticalAnalyst
 from core.rag import RAGBrain
 from core.slide_generator import BoardroomSlide
 import time
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logging.getLogger("py4j").setLevel(logging.CRITICAL)
+logging.getLogger("py4j.clientserver").setLevel(logging.CRITICAL)
 
 app = FastAPI(
     title="Insight-Zero Intelligence Engine",
@@ -18,6 +28,23 @@ app = FastAPI(
         "email": "api@insight-zero.com",
     },
 )
+
+# 2. UPGRADED: The bulletproof shutdown hook
+@app.on_event("shutdown")
+def shutdown_event():
+    print("\n🛑 Received exit signal. Shutting down PySpark JVM gracefully...")
+    try:
+        # Get the active Spark session and kill it
+        spark = SparkSession.getActiveSession()
+        if spark:
+            spark.stop()
+            print("✅ PySpark JVM terminated.")
+    except Exception as e:
+        pass # Ignore trailing socket errors during teardown
+    finally:
+        print("⚡ Forcing Python thread cleanup...")
+        # Instantly kill any lingering Py4J background threads that cause the infinite loop
+        os._exit(0)
 
 # 2. NEW CORS CONFIGURATION
 # This tells Python to accept requests directly from your Next.js frontend
@@ -33,7 +60,8 @@ class AnalysisRequest(BaseModel):
     data_source: str
     csv_content: Optional[str] = None
     db_connection_str: Optional[str] = None 
-    db_query: Optional[str] = None          
+    db_query: Optional[str] = None
+    tenant_id: str = "default_tenant" # <--- NEW          
 
 @app.get("/")
 def home():
@@ -41,18 +69,20 @@ def home():
 
 # --- PDF Upload Route ---
 @app.post("/upload-context")
-async def upload_context(file: UploadFile = File(...)):
+async def upload_context(file: UploadFile = File(...), tenant_id: str = Form("default_tenant")):
     try:
         contents = await file.read()
-        result = RAGBrain.ingest_pdf(contents, file.filename)
+        # NEW: Pass tenant_id to RAGBrain
+        result = RAGBrain.ingest_pdf(contents, file.filename, tenant_id)
         return result
     except Exception as e:
+        print(f"!!! UPLOAD CRASH: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/analyze")
 def analyze_data(request: AnalysisRequest):
     start_time = time.time() # START TIMER
-    print("1. Loading Data for: {request.data_source}...")
+    print(f"1. Loading Data for: {request.data_source}...")
     df = DataLoader.get_data(
             source=request.data_source, 
             csv_content=request.csv_content
@@ -83,26 +113,28 @@ def analyze_data(request: AnalysisRequest):
     report = StatisticalAnalyst.analyze_revenue(df)
     report['privacy_audit'] = report_privacy_msg
 
-        # Trigger RAG Brain
+    # Trigger RAG Brain
     tokens_used = 0
     if len(report['details']) > 0:
-            print("4. Querying RAG Brain for Root Cause...")
+            print(f"4. Querying RAG Brain for Root Cause (Tenant: {request.tenant_id})...")
             sorted_anomalies = sorted(
                 report['details'], 
                 key=lambda x: (0 if x.get('severity') == 'HIGH' else 1, x.get('actual_value', float('inf')))
             )
             primary_anomaly = sorted_anomalies[0]
             
+            # NEW: Pass tenant_id from request into RAGBrain
             rag_result = RAGBrain.get_root_cause(
                 anomaly_date=primary_anomaly['date'], 
-                anomaly_desc=primary_anomaly['description']
+                anomaly_desc=primary_anomaly['description'],
+                tenant_id=request.tenant_id
             )
             report['root_cause_analysis'] = rag_result['text']
             tokens_used = rag_result['tokens']
 
-        # TELEMETRY (FINOPS)
+    # TELEMETRY (FINOPS)
     process_time = round(time.time() - start_time, 2)
-        # Assuming GPT-4 costs ~$0.01 per 1k tokens. We show how much money we SAVED by using Llama-3 locally.
+    # Assuming GPT-4 costs ~$0.01 per 1k tokens. We show how much money we SAVED by using Llama-3 locally.
     equivalent_cost = (tokens_used / 1000) * 0.01 
         
     report['ops_metrics'] = {

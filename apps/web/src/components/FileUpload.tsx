@@ -10,7 +10,8 @@ export default function FileUpload({
   onAnalysisComplete: (data: any) => void;
 }) {
   const [uploading, setUploading] = useState(false);
-  const { getToken, isSignedIn } = useAuth(); // Much safer than window.Clerk
+  // NEW: Destructure userId from Clerk
+  const { getToken, isSignedIn, userId } = useAuth(); // Much safer than window.Clerk
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0] || !isSignedIn) return;
@@ -21,6 +22,8 @@ export default function FileUpload({
     // Backend multer expects the field name to be 'file'
     const formData = new FormData();
     formData.append("file", file);
+    // NEW: Pass the Clerk userId as the tenant_id to the Node API Gateway
+    formData.append("tenant_id", userId || "anonymous");
 
     try {
       const token = await getToken();

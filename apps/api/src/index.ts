@@ -79,8 +79,11 @@ app.post(
       console.log("Authenticated User Request Received");
       const { data_source } = req.body;
 
+      // FIX: Use Docker Network Environment Variable
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8000";
+
       // Send a request to the Python Engine
-      const response = await axios.post("http://127.0.0.1:8000/analyze", {
+      const response = await axios.post(`${engineUrl}/analyze`, {
         data_source: data_source,
       });
       const insight = response.data;
@@ -104,7 +107,7 @@ app.post(
       console.error("Python Engine is down or busy");
       res.status(500).json({ error: "Failed to contact Analyst Engine" });
     }
-  },
+  }
 );
 
 app.post(
@@ -117,17 +120,21 @@ app.post(
 
       const csvContent = req.file.buffer.toString("utf-8");
 
+      // CRITICAL: Extract the user ID from Clerk auth
+      const userId = (req as any).auth?.userId || "default_tenant";
+
       // Add to Redis Queue instead of waiting
       const job = await analysisQueue.add("analyze-csv", {
         data_source: req.file.originalname,
         csv_content: csvContent,
+        tenant_id: userId
       });
 
       res.json({ jobId: job.id, message: "Analysis Queued" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
-  },
+  }
 );
 
 // --- NEW: JOB STATUS POLLING ROUTE ---
@@ -162,8 +169,11 @@ app.post(
 
       console.log(`[API] 🔗 Connecting to Remote DB...`);
 
+      // FIX: Use Docker Network Environment Variable
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8000";
+
       // Forward credentials to Python (Python acts as the bridge)
-      const pythonRes = await axios.post("http://127.0.0.1:8000/analyze", {
+      const pythonRes = await axios.post(`${engineUrl}/analyze`, {
         data_source: "postgres_live",
         db_connection_str: connection_string,
         db_query: query,
@@ -189,7 +199,7 @@ app.post(
       console.error("DB Connection Failed", error.message);
       res.status(500).json({ error: error.message });
     }
-  },
+  }
 );
 
 // 7. NEW: KNOWLEDGE BASE UPLOAD ROUTE
@@ -213,7 +223,10 @@ app.post(
       });
       formData.append("file", blob, req.file.originalname);
 
-      const pythonRes = await fetch("http://127.0.0.1:8000/upload-context", {
+      // FIX: Use Docker Network Environment Variable
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8000";
+
+      const pythonRes = await fetch(`${engineUrl}/upload-context`, {
         method: "POST",
         body: formData,
       });
@@ -226,7 +239,7 @@ app.post(
       console.error("Context Upload Failed", error.message);
       res.status(500).json({ error: error.message });
     }
-  },
+  }
 );
 
 // 8. NEW: GENERATE PPTX SLIDE ROUTE
@@ -239,7 +252,10 @@ app.post(
 
       console.log(`[API] 📊 Generating Executive Slide for ${anomaly_date}`);
 
-      const pythonRes = await fetch("http://127.0.0.1:8000/export-slide", {
+      // FIX: Use Docker Network Environment Variable
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8000";
+
+      const pythonRes = await fetch(`${engineUrl}/export-slide`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ anomaly_date, revenue, confidence, root_cause }),
@@ -255,7 +271,7 @@ app.post(
       console.error("Slide Generation Failed", error.message);
       res.status(500).json({ error: error.message });
     }
-  },
+  }
 );
 
 // 4. Fetch History Route (Optional but good to have)
@@ -274,7 +290,7 @@ app.get(
         .status(500)
         .json({ error: "Failed to fetch reports", details: error.message });
     }
-  },
+  }
 );
 
 // Error handler for auth failures
