@@ -238,6 +238,10 @@ app.post(
       });
       formData.append("file", blob, req.file.originalname);
 
+      const authReq = req as AuthenticatedRequest;
+      const userId = authReq.auth?.userId || "default_tenant";
+      formData.append("tenant_id", userId);
+
       // FIX: Use Docker Network Environment Variable
       const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8000";
 
@@ -246,7 +250,11 @@ app.post(
         body: formData,
       });
 
-      if (!pythonRes.ok) throw new Error("Python RAG ingestion failed");
+      if (!pythonRes.ok) {
+        const errText = await pythonRes.text();
+        console.error("[API] Python Engine Error:", errText);
+        throw new Error(`Python RAG ingestion failed: ${errText}`);
+      }
 
       const result = await pythonRes.json();
       res.json({ message: "Knowledge Base Updated", details: result });
