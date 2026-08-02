@@ -2,7 +2,7 @@ import os
 import io
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 from pinecone import Pinecone
 from pinecone_text.sparse import BM25Encoder
 from groq import Groq
@@ -12,7 +12,7 @@ load_dotenv()
 
 # Global initialization at startup
 print("Loading Dense Embedding Engine (all-MiniLM)...")
-_dense_model = SentenceTransformer('all-MiniLM-L6-v2')
+_dense_model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 print("Loading Sparse Embedding Engine (BM25)...")
 # Initialize default BM25 encoder for exact keyword matching
@@ -64,7 +64,7 @@ class RAGBrain:
             
             # 3. Generate HYBRID Embeddings
             vectors = []
-            dense_embeddings = cls._dense_embedder.encode(chunks)
+            dense_embeddings = list(cls._dense_embedder.embed(chunks))
             sparse_embeddings = cls._sparse_embedder.encode_documents(chunks)
             
             for i, (chunk, dense, sparse) in enumerate(zip(chunks, dense_embeddings, sparse_embeddings)):
@@ -100,7 +100,7 @@ class RAGBrain:
             query_text = f"What happened around {anomaly_date}? {anomaly_desc}"
             
             # 1. Embed Hybrid Query
-            dense_query = cls._dense_embedder.encode(query_text).tolist()
+            dense_query = list(cls._dense_embedder.embed([query_text]))[0].tolist()
             sparse_query = cls._sparse_embedder.encode_queries(query_text)
             
             # 2. Hybrid Search in specific Namespace
