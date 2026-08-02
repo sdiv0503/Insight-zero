@@ -14,8 +14,6 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python -m nltk.downloader punkt_tab stopwords
-
 # 3. Download the heavy NLP model locally so it caches into the Docker layer
 RUN PIP_DEFAULT_TIMEOUT=1000 python -m spacy download en_core_web_sm
 
