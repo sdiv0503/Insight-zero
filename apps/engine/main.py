@@ -43,6 +43,7 @@ class AnalysisRequest(BaseModel):
     tenant_id: str = "default_tenant"
 
 @app.get("/")
+@app.head("/")
 def home():
     return {"status": "Insight-Zero Enterprise Engine Ready 🛡️"}
 
