@@ -221,7 +221,7 @@ app.post(
 app.post(
   "/upload-context",
   ClerkExpressRequireAuth() as unknown as RequestHandler,
-  upload.single("document"),
+  upload.single("file"),
   async (req: Request, res: Response) => {
     try {
       if (!req.file)
