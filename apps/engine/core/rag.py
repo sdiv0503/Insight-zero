@@ -4,19 +4,12 @@ from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from fastembed import TextEmbedding
 from pinecone import Pinecone
-from pinecone_text.sparse import BM25Encoder
 from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Global initialization at startup
-print("Loading Dense Embedding Engine (all-MiniLM)...")
-_dense_model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-print("Loading Sparse Embedding Engine (BM25)...")
-# Initialize default BM25 encoder for exact keyword matching
-_bm25_encoder = BM25Encoder().default()
 
 class RAGBrain:
     _pinecone_index = None
@@ -28,10 +21,8 @@ class RAGBrain:
     def initialize(cls):
         """Lazy initialization of heavy ML models and connections"""
         if cls._dense_embedder is None:
-            cls._dense_embedder = _dense_model
-            
-        if cls._sparse_embedder is None:
-            cls._sparse_embedder = _bm25_encoder
+            print("Loading Dense Embedding Engine (all-MiniLM)...")
+            cls._dense_embedder = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
         
         if cls._pinecone_index is None:
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -62,18 +53,16 @@ class RAGBrain:
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
             chunks = text_splitter.split_text(text)
             
-            # 3. Generate HYBRID Embeddings
+            # 3. Generate DENSE Embeddings
             vectors = []
             dense_embeddings = list(cls._dense_embedder.embed(chunks))
-            sparse_embeddings = cls._sparse_embedder.encode_documents(chunks)
             
-            for i, (chunk, dense, sparse) in enumerate(zip(chunks, dense_embeddings, sparse_embeddings)):
+            for i, (chunk, dense) in enumerate(zip(chunks, dense_embeddings)):
                 safe_id = f"{filename}-chunk-{i}".replace(" ", "_")
                 
                 vectors.append({
                     "id": safe_id,
                     "values": dense.tolist(),
-                    "sparse_values": sparse, # The BM25 Exact Match Data
                     "metadata": {"text": chunk, "source": filename}
                 })
                 
@@ -99,14 +88,12 @@ class RAGBrain:
             
             query_text = f"What happened around {anomaly_date}? {anomaly_desc}"
             
-            # 1. Embed Hybrid Query
+            # 1. Embed Query
             dense_query = list(cls._dense_embedder.embed([query_text]))[0].tolist()
-            sparse_query = cls._sparse_embedder.encode_queries(query_text)
             
-            # 2. Hybrid Search in specific Namespace
+            # 2. Dense Vector Search in specific Namespace
             results = cls._pinecone_index.query(
                 vector=dense_query,
-                sparse_vector=sparse_query, # Exact keyword search active
                 top_k=3,
                 include_metadata=True,
                 namespace=tenant_id         # Only search this tenant's files
