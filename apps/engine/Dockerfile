@@ -3,6 +3,7 @@ FROM python:3.11-slim-bullseye
 
 # Set the working directory inside the container
 WORKDIR /app
+ENV PYTHONUNBUFFERED=1
 
 # Install build essentials for native Python packages (no Java needed anymore)
 RUN apt-get update && \

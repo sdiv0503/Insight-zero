@@ -96,6 +96,11 @@ def analyze_data(request: AnalysisRequest):
             )
             primary_anomaly = sorted_anomalies[0]
             
+            # FREE MEMORY: Delete Pandas DataFrame before loading heavy RAG models!
+            import gc
+            del df
+            gc.collect()
+            
             rag_result = RAGBrain.get_root_cause(
                 anomaly_date=primary_anomaly['date'], 
                 anomaly_desc=primary_anomaly['description'],

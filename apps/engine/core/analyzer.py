@@ -34,7 +34,7 @@ class StatisticalAnalyst:
                 contamination=0.005,    
                 max_samples='auto',
                 random_state=42,
-                n_jobs=-1              
+                n_jobs=1              
             )
             clf.fit(sample_df)
 

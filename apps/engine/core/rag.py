@@ -22,7 +22,7 @@ class RAGBrain:
         """Lazy initialization of heavy ML models and connections"""
         if cls._dense_embedder is None:
             print("Loading Dense Embedding Engine (all-MiniLM)...")
-            cls._dense_embedder = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            cls._dense_embedder = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2", threads=1)
         
         if cls._pinecone_index is None:
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
