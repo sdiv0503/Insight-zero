@@ -9,15 +9,18 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/ 
 
-# Install dependencies and force Prisma v5
+# Install dependencies
 RUN npm install
-RUN npm install prisma@5 @prisma/client@5
 
-# Generate the Linux-compatible Prisma Client
+# Generate the Linux-compatible Prisma Client and compile TypeScript
 RUN npx prisma generate
+RUN npx tsc || true
 
 COPY . .
 
+# Build the compiled output
+RUN npm run build
+
 EXPOSE 3001
 
-CMD ["npm", "run", "dev"]
+CMD ["npm", "start"]

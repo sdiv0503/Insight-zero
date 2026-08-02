@@ -4,15 +4,13 @@ FROM python:3.11-slim-bullseye
 # Set the working directory inside the container
 WORKDIR /app
 
-# Install Java (Required for PySpark)
+# Install build essentials for native Python packages (no Java needed anymore)
 RUN apt-get update && \
-    apt-get install -y openjdk-11-jre-headless build-essential && \
+    apt-get install -y build-essential && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-
-# 1. THE CULPRIT FIX: Install PyTorch CPU-ONLY version first (Saves 2.5 GB!)
+# 1. Install PyTorch CPU-ONLY version first (required by sentence-transformers)
 RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 # 2. Copy the minimal requirements and install

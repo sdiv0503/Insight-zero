@@ -2,6 +2,7 @@ import { Queue, Worker } from "bullmq";
 import Redis from "ioredis";
 import dotenv from "dotenv";
 import axios from "axios"; 
+import { prisma } from "./db"; // <--- IMPORT PRISMA
 
 dotenv.config();
 
@@ -54,10 +55,26 @@ export const analysisWorker = new Worker(
         },
       );
 
+      const insight = response.data;
+      
       console.log(
         `[Worker] 📥 Python Engine returned results for Job ${job.id}`,
       );
-      return response.data;
+
+      // --- NEW: SAVE TO THE DATABASE ---
+      await prisma.analysisReport.create({
+        data: {
+          userId: job.data.tenant_id || "default_tenant", 
+          dataSource: job.data.data_source,
+          summary: insight.root_cause_analysis || insight.summary || "Analysis completed. No summary generated.",
+          anomalyCount: insight.anomalies_found || 0,
+          rawJson: insight,
+        },
+      });
+      // ---------------------------------
+      
+      console.log(`[Worker] ✅ Job ${job.id} completed and saved to database.`);
+      return insight;
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || error.message;
       console.error(`[Worker] ❌ Python Analysis Error: ${errorMsg}`);

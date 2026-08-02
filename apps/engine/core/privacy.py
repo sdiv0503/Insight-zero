@@ -1,22 +1,18 @@
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
-from pyspark.sql.functions import udf
-from pyspark.sql.types import StringType
-from pyspark.sql.functions import pandas_udf
 import pandas as pd
 
-# Global variables to cache the models on the worker nodes
+# Global variables to cache the models
 _analyzer = None
 _anonymizer = None
 
 class DataGuard:
     @staticmethod
     def scan_and_redact(text: str) -> str:
-        if not text:
+        if not text or not isinstance(text, str):
             return text
             
         # LAZY INITIALIZATION: Only load the heavy NLP models if they haven't been loaded yet.
-        # This prevents the massive OOM spike when Spark starts up.
         global _analyzer, _anonymizer
         if _analyzer is None:
             _analyzer = AnalyzerEngine()
@@ -31,5 +27,6 @@ class DataGuard:
         
         return anonymized_text.text
 
-def batch_redact(s: pd.Series) -> pd.Series:
-    return s.apply(DataGuard.scan_and_redact)
+def batch_redact(series: pd.Series) -> pd.Series:
+    """Apply PII redaction across a Pandas Series."""
+    return series.apply(DataGuard.scan_and_redact)

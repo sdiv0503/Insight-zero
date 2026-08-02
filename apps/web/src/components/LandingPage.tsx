@@ -15,7 +15,7 @@ export default function LandingPage() {
         </div>
         <div className="flex gap-4">
             <Button variant="ghost" className="text-slate-300 hover:text-white" asChild>
-                <a href="http://localhost:3001/api-docs" target="_blank">API Docs</a>
+                <a href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api-docs`} target="_blank">API Docs</a>
             </Button>
             <SignInButton mode="modal">
                 <Button className="bg-indigo-600 hover:bg-indigo-700 text-white">Sign In / Dashboard</Button>

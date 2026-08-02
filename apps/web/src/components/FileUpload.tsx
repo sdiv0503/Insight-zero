@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { UploadCloud, Loader2 } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
+import { API_URL } from "@/lib/config";
 
 export default function FileUpload({
   onAnalysisComplete,
@@ -28,7 +29,7 @@ export default function FileUpload({
     try {
       const token = await getToken();
 
-      const res = await fetch("http://localhost:3001/upload-analysis", {
+      const res = await fetch(`${API_URL}/upload-analysis`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

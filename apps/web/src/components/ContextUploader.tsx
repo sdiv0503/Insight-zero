@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BookOpen, CheckCircle } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
+import { API_URL } from "@/lib/config";
 
 export default function ContextUploader() {
   // NEW: Destructure userId from Clerk
@@ -25,7 +26,7 @@ export default function ContextUploader() {
 
     try {
       const token = await getToken();
-      const res = await fetch("http://localhost:8000/upload-context", {
+      const res = await fetch(`${API_URL}/upload-context`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,

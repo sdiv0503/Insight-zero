@@ -9,9 +9,10 @@ datasource db {
 
 model AnalysisReport {
   id           String   @id @default(uuid())
-  dataSource   String
-  summary      String?
-  anomalyCount Int?
-  rawJson      Json?
+  userId       String   // Stores the Clerk User ID
+  dataSource   String   // Name of the CSV or PDF
+  summary      String   // The LLM Root Cause Summary
+  anomalyCount Int      // Number of anomalies found
+  rawJson      Json     // The complete PySpark payload
   createdAt    DateTime @default(now())
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useAuth, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { useAuth, SignedIn, SignedOut } from "@clerk/nextjs";
 import InsightChart from "@/components/InsightChart";
 import MetricCard from "@/components/MetricCard";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import ContextUploader from "@/components/ContextUploader";
 import ExportControls from "@/components/ExportControls";
 import CostMonitor from "@/components/CostMonitor";
 import { Loader2 } from "lucide-react";
+import { API_URL } from "@/lib/config";
 import LandingPage from "@/components/LandingPage";
 import ReactMarkdown from "react-markdown"; // NEW: Markdown Renderer
 
@@ -35,7 +36,7 @@ export default function Dashboard() {
           return; // Skip this tick and try again in 2 seconds
         }
 
-        const res = await fetch(`http://localhost:3001/job-status/${jobId}`, {
+        const res = await fetch(`${API_URL}/job-status/${jobId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -116,8 +117,6 @@ export default function Dashboard() {
               </p>
             </div>
 
-            {/* User Profile Button for logging out */}
-            <UserButton afterSignOutUrl="/" />
           </div>
 
           {/* Inputs */}

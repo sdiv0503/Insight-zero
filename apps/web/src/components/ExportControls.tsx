@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FileText, Presentation as PptIcon, Loader2 } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
+import { API_URL } from "@/lib/config";
 import jsPDF from "jspdf";
 import { toPng } from "html-to-image";
 
@@ -57,7 +58,7 @@ export default function ExportControls({ report, targetId }: { report: any, targ
         
         const primaryAnomaly = sortedAnomalies[0] || {};
         
-        const res = await fetch("http://localhost:3001/export-slide", {
+        const res = await fetch(`${API_URL}/export-slide`, {
             method: "POST",
             headers: { 
                 "Content-Type": "application/json",

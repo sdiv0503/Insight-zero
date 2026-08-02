@@ -15,6 +15,12 @@ import axios from "axios";
 import { ClerkExpressRequireAuth } from "@clerk/clerk-sdk-node";
 import multer from "multer";
 import { prisma } from "./db";
+
+type AuthenticatedRequest = Request & {
+  auth?: {
+    userId: string;
+  };
+};
 // -----------------------------------
 
 const upload = multer({ storage: multer.memoryStorage() }); // Store file in RAM temporarily
@@ -22,7 +28,10 @@ const upload = multer({ storage: multer.memoryStorage() }); // Store file in RAM
 const app = express();
 const PORT = 3001;
 
-app.use(cors());
+app.use(cors({ 
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true
+}));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -78,6 +87,8 @@ app.post(
     try {
       console.log("Authenticated User Request Received");
       const { data_source } = req.body;
+      const authReq = req as AuthenticatedRequest;
+      const userId = authReq.auth?.userId || "default_tenant";
 
       // FIX: Use Docker Network Environment Variable
       const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8000";
@@ -91,6 +102,7 @@ app.post(
       // Save to DB
       const savedReport = await prisma.analysisReport.create({
         data: {
+          userId,
           dataSource: data_source,
           summary: insight.summary,
           anomalyCount: insight.anomalies_found,
@@ -179,10 +191,13 @@ app.post(
         db_query: query,
       });
       const insight = pythonRes.data;
+      const authReq = req as AuthenticatedRequest;
+      const userId = authReq.auth?.userId || "default_tenant";
 
       // Save Record
       const savedReport = await prisma.analysisReport.create({
         data: {
+          userId,
           dataSource: "Live Database Connection",
           summary: insight.summary,
           anomalyCount: insight.anomalies_found,
@@ -274,16 +289,26 @@ app.post(
   }
 );
 
-// 4. Fetch History Route (Optional but good to have)
+// 4. Fetch History Route
 app.get(
   "/reports",
   ClerkExpressRequireAuth() as unknown as RequestHandler,
   async (req: Request, res: Response) => {
     try {
+      const authReq = req as AuthenticatedRequest;
+      const userId = authReq.auth?.userId;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized user" });
+      }
+
+      // Fetch only the reports belonging to the authenticated user
       const reports = await prisma.analysisReport.findMany({
+        where: { userId: userId },
         orderBy: { createdAt: "desc" },
-        take: 10,
+        take: 50, // Added a reasonable limit for dashboard rendering
       });
+      
       res.json(reports);
     } catch (error: any) {
       res

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Database } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
+import { API_URL } from "@/lib/config";
 
 export default function DbConnect({ onAnalysisComplete }: { onAnalysisComplete: (data: any) => void }) {
   const { getToken } = useAuth();
@@ -15,7 +16,7 @@ export default function DbConnect({ onAnalysisComplete }: { onAnalysisComplete: 
     setLoading(true);
     try {
       const token = await getToken();
-      const res = await fetch("http://localhost:3001/connect-db-analysis", {
+      const res = await fetch(`${API_URL}/connect-db-analysis`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
